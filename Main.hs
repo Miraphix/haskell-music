@@ -107,6 +107,16 @@ rawTruE =
   where
     quarter = 60 / 80 :: Float
 
+waveLPF :: Wave -> Float -> Wave
+waveLPF wave wc = fst $ foldr ff ([], y0) wave
+  where
+    ff uthis (acc, yprev) =
+      let ythis = yk yprev uthis
+      in (ythis:acc, ythis)
+    y0 = head wave
+    yk ykm1 uk = (1 * ykm1 + _T*wc*uk)/(1+_T*wc)
+    _T = 1 / 48000
+
 smooth :: Int -> Wave -> Wave
 smooth n xs = map f ws
   where
@@ -132,7 +142,7 @@ save fp raw =
   L.writeFile fp $
     B.toLazyByteString $
       foldMap B.floatLE $
-        raw
+        waveLPF raw 5000
 
 main :: IO ()
 main = do
