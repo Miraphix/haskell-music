@@ -15,6 +15,9 @@ type Freq = Float
 
 type Wave = [Float]
 
+bitrate :: Float
+bitrate = 48000
+
 fp :: FilePath
 fp = "output.bin"
 
@@ -40,7 +43,7 @@ timbreSine a freq duration = _wave freq
   where
     _wave freq = map (asin2πω a freq) xs
     xs = [0.0, step .. duration]
-    step = 1 / 48000 :: Float
+    step = 1 / bitrate :: Float
 
 timbreTriangular :: Amplitude -> Freq -> Float -> Wave
 timbreTriangular a freq duration =
@@ -50,11 +53,11 @@ timbreTriangular a freq duration =
   where
     _wave freq = map (triangular a freq) xs
     xs = [0.0, step .. duration]
-    step = 1 / 48000 :: Float
+    step = 1 / bitrate :: Float
 
 timbreSaw :: Amplitude -> Freq -> Float -> Wave
 timbreSaw a freq duration =
-  mixUp 
+  mixUp
     [ _wave 0.1 freq,
       _wave 0.05 (freq * semitoneRatio ** 12),
       _wave 0.01 (freq * semitoneRatio ** 24),
@@ -64,10 +67,17 @@ timbreSaw a freq duration =
   where
     _wave _a freq = map (saw _a freq) xs
     xs = [0.0, step .. duration]
-    step = 1 / 48000 :: Float
+    step = 1 / bitrate :: Float
 
-timbrePiano :: Freq -> Float -> Wave
-timbrePiano = undefined
+timbrePiano :: Amplitude -> Freq -> Float -> Wave
+timbrePiano a freq duration = mixUp ws
+  where
+    ws =
+      map (`map` xs) wtf
+    wtf = zipWith (\f a -> f a) (map asin2πω an) (map (harmonic freq) [0 .. 8])
+    an = [0.1, 0.04, 0.02, 0.015, 0.01, 0.0075, 0.005, 0.0025]
+    xs = [0.0, step .. duration]
+    step = 1 / bitrate :: Float
 
 mix :: Wave -> Wave -> Wave
 a `mix` b = zipWith (+) a b
@@ -75,10 +85,39 @@ a `mix` b = zipWith (+) a b
 mixUp :: [Wave] -> Wave
 mixUp ws = foldr mix (head ws) (tail ws)
 
+waveLPF :: Wave -> Freq -> Wave
+waveLPF wave wc = fst $ foldr ff ([], y0) wave
+  where
+    ff uthis (acc, yprev) = (ythis : acc, ythis)
+      where ythis = yk yprev uthis
+    y0 = head wave
+    yk ykm1 uk = (1 * ykm1 + _T * wc * uk) / (1 + _T * wc)
+    _T = 1 / bitrate
+
+smooth :: Int -> Wave -> Wave
+smooth n xs = map f ws
+  where
+    f :: Wave -> Float
+    f ws = sum ws / fromIntegral (length ws)
+    windows n xs = map (take n) (tails xs)
+    ws = windows n xs
+
+harmonic :: Freq -> Int -> Freq
+harmonic f0 n = nf * f0 * sqrt (1 + 1e-4 * nf * nf)
+  where
+    nf = fromIntegral n :: Float
+
+attenuation :: Int -> Float -> Float
+attenuation n t = exp $ -(t / taun)
+  where
+    taun = tau0 / (1 + alpha * fromIntegral n)
+    tau0 = 10 * bitrate
+    alpha = 1
+
 rawTruE =
   foldl (<>) [] $
     map
-      (uncurry (timbreSaw 0.1) . second (* quarter))
+      (uncurry (timbrePiano 0.1) . second (* quarter))
       [ ---
         (e5, 2),
         (d5, 1),
@@ -107,42 +146,12 @@ rawTruE =
   where
     quarter = 60 / 80 :: Float
 
-waveLPF :: Wave -> Float -> Wave
-waveLPF wave wc = fst $ foldr ff ([], y0) wave
-  where
-    ff uthis (acc, yprev) =
-      let ythis = yk yprev uthis
-      in (ythis:acc, ythis)
-    y0 = head wave
-    yk ykm1 uk = (1 * ykm1 + _T*wc*uk)/(1+_T*wc)
-    _T = 1 / 48000
-
-smooth :: Int -> Wave -> Wave
-smooth n xs = map f ws
-  where
-    f :: Wave -> Float
-    f ws = sum ws / fromIntegral (length ws)
-    windows n xs = map (take n) (tails xs)
-    ws = windows n xs
-
-harmonic :: Float -> Int -> Float
-harmonic f0 n = nf * f0 * sqrt (1 + 1e-4 * nf * nf)
-  where
-    nf = fromIntegral n :: Float
-
-attenuation :: Int -> Float -> Float
-attenuation n t = exp $ -(t / taun)
-  where
-    taun = tau0 / (1 + alpha * fromIntegral n)
-    tau0 = 10
-    alpha = 1
-
 save :: FilePath -> Wave -> IO ()
 save fp raw =
   L.writeFile fp $
     B.toLazyByteString $
       foldMap B.floatLE $
-        waveLPF raw 5000
+        waveLPF raw 10000
 
 main :: IO ()
 main = do
