@@ -1,4 +1,5 @@
 *.bin
 *.mp3
+*.wav
 music/
 dist-newstyle

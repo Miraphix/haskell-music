@@ -58,7 +58,7 @@ timbreSaw a freq duration =
 timbrePiano :: Amplitude -> Freq -> Float -> Wave
 timbrePiano a freq duration = ns `mix` mixUp ws
   where
-    ws = do
+    ws = base : do
       let ip = zip [0 .. prog] an
       (index, ak) <- ip
       let _freq = harmonic freq index
@@ -69,6 +69,8 @@ timbrePiano a freq duration = ns `mix` mixUp ws
     xs = [0.0, step .. duration]
     step = 1 / bitRate
     ns = waveLPF (noise 0.1 5e-3) 4000
+
+    base = map (\x -> attenuation 1 x * asin2πω 0.02 50 x) xs
 
 noise :: Amplitude -> Float -> Wave
 noise a duration = fst $ foldl f ([], gen) xs
